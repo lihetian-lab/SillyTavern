@@ -41,6 +41,20 @@ const EXTENSION_NAME = 'prts-engine';
 
 const MODES = { ACTOR: 'actor', DIRECTOR: 'director', EDITOR: 'editor' };
 
+/** Default hotkey to toggle PRTS on/off (can be overridden per-chat via /prts-hotkey) */
+const DEFAULT_HOTKEY = 'F12';
+
+/**
+ * SillyTavern chrome elements to hide when PRTS is active.
+ * We tag each with data-prts-hidden so we only restore what we hid.
+ */
+const PRTS_CHROME_SELECTORS = [
+    '#top-bar',
+    '#left-nav-panel',
+    '#right-nav-panel',
+    '#top-settings-holder',
+];
+
 const VIBES = [
     { id: 'neutral',  icon: '⚬', color: '#ffb000', title: '中性' },
     { id: 'conflict', icon: '⚡', color: '#ff3333', title: '冲突' },
@@ -87,6 +101,7 @@ const DEFAULT_STATE = () => ({
     currentScene: '',
     generating: false,
     bindings: {},
+    hotkey: DEFAULT_HOTKEY,
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -110,6 +125,109 @@ function saveState() {
     if (ctx.chatMetadata) {
         ctx.chatMetadata.prts_state = JSON.parse(JSON.stringify(state));
         ctx.saveMetadataDebounced();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HOTKEY SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Parse a hotkey string like "F12", "Ctrl+Shift+P", "Alt+F4".
+ * Returns { ctrl, alt, shift, meta, key } or null.
+ * @param {string} str
+ */
+function parseHotkey(str) {
+    if (!str) return null;
+    const parts = str.split('+').map(p => p.trim());
+    const modifiers = new Set(parts.map(p => p.toLowerCase()));
+    const key = parts.find(p => !['ctrl', 'control', 'alt', 'shift', 'meta', 'cmd', 'win'].includes(p.toLowerCase()));
+    if (!key) return null;
+    return {
+        ctrl:  modifiers.has('ctrl') || modifiers.has('control'),
+        alt:   modifiers.has('alt'),
+        shift: modifiers.has('shift'),
+        meta:  modifiers.has('meta') || modifiers.has('cmd') || modifiers.has('win'),
+        key:   key,
+    };
+}
+
+/**
+ * Test whether a KeyboardEvent matches a hotkey string.
+ * @param {KeyboardEvent} event
+ * @param {string} str
+ */
+function matchesHotkey(event, str) {
+    const hk = parseHotkey(str);
+    if (!hk) return false;
+    // Compare key case-insensitively for letters, exactly for F-keys / special keys
+    const keyMatch = event.key.toLowerCase() === hk.key.toLowerCase()
+        || event.code.toLowerCase() === hk.key.toLowerCase();
+    return keyMatch
+        && event.ctrlKey  === hk.ctrl
+        && event.altKey   === hk.alt
+        && event.shiftKey === hk.shift
+        && event.metaKey  === hk.meta;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CHROME HIDE / RESTORE
+//  Hides SillyTavern's menu bar and sidebars when PRTS is
+//  active. Only restores elements that PRTS itself hid.
+// ═══════════════════════════════════════════════════════════
+
+function hideSTChrome() {
+    for (const sel of PRTS_CHROME_SELECTORS) {
+        const el = document.querySelector(sel);
+        if (el && !el.dataset.prtsHidden) {
+            el.dataset.prtsHidden = el.style.display || '__auto__';
+            el.style.display = 'none';
+        }
+    }
+}
+
+function restoreSTChrome() {
+    for (const sel of PRTS_CHROME_SELECTORS) {
+        const el = document.querySelector(sel);
+        if (el && el.dataset.prtsHidden !== undefined) {
+            el.style.display = el.dataset.prtsHidden === '__auto__' ? '' : el.dataset.prtsHidden;
+            delete el.dataset.prtsHidden;
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GLOBAL KEYDOWN HANDLER
+// ═══════════════════════════════════════════════════════════
+
+function onGlobalKeydown(event) {
+    const hotkeyStr = state.hotkey || DEFAULT_HOTKEY;
+    const hk = parseHotkey(hotkeyStr);
+
+    // Suppress hotkey if user is typing in a text field, UNLESS the hotkey
+    // is a bare F-key (F1–F12), which should always fire.
+    const tag = document.activeElement?.tagName?.toLowerCase() ?? '';
+    const isEditable = ['input', 'textarea', 'select'].includes(tag)
+        || document.activeElement?.isContentEditable;
+    const isFKey = hk && /^f\d+$/i.test(hk.key);
+
+    if (isEditable && !isFKey) return;
+
+    if (matchesHotkey(event, hotkeyStr)) {
+        event.preventDefault();
+        event.stopPropagation();
+        state.active = !state.active;
+        saveState();
+        updateUI();
+        return;
+    }
+
+    // Escape always exits PRTS (only when active, to avoid stealing ST Escape)
+    if (event.key === 'Escape' && state.active) {
+        event.preventDefault();
+        state.active = false;
+        saveState();
+        updateUI();
     }
 }
 
@@ -472,6 +590,8 @@ function buildHTML() {
         <span id="prts-status-mode">MODE: ${state.mode.toUpperCase()}</span>
         <span id="prts-status-vibe">VIBE: ${state.vibe.toUpperCase()}</span>
         <span id="prts-status-scene">SCENES: ${state.sceneBlocks.length}</span>
+        <span id="prts-status-hotkey" style="margin-left:auto; opacity:0.45; cursor:default;"
+              title="Change with /prts-hotkey hotkey=...">[${state.hotkey || DEFAULT_HOTKEY}] TOGGLE  ·  [ESC] EXIT</span>
     </div>
 
 </div>`;
@@ -498,7 +618,7 @@ function injectUI() {
             const btn = document.createElement('button');
             btn.id = 'prts-toggle-btn';
             btn.innerHTML = '◈ PRTS';
-            btn.title = 'Toggle PRTS Narrative Engine';
+            btn.title = `Toggle PRTS Narrative Engine  [${state.hotkey || DEFAULT_HOTKEY}]`;
             topBar.appendChild(btn);
         }
     }
@@ -511,16 +631,17 @@ function updateUI() {
     const engine = document.getElementById('prts-engine');
     if (!engine) return;
 
-    // Show/hide engine
+    // Show/hide engine + ST chrome
     if (!state.active) {
         engine.classList.add('hidden');
         engine.classList.remove('console-open', 'console-closed');
+        restoreSTChrome();
     } else {
         engine.classList.remove('hidden');
-        // Ensure a console state class exists
         if (!engine.classList.contains('console-open') && !engine.classList.contains('console-closed')) {
             engine.classList.add('console-closed');
         }
+        hideSTChrome();
     }
 
     // ST toggle button
@@ -577,6 +698,17 @@ function updateUI() {
     if (modeStatus)  modeStatus.textContent  = `MODE: ${state.mode.toUpperCase()}`;
     if (vibeStatus)  vibeStatus.textContent  = `VIBE: ${state.vibe.toUpperCase()}`;
     if (sceneStatus) sceneStatus.textContent = `SCENES: ${state.sceneBlocks.length}`;
+
+    const hotkeyStatus = document.getElementById('prts-status-hotkey');
+    if (hotkeyStatus) {
+        const hk = state.hotkey || DEFAULT_HOTKEY;
+        hotkeyStatus.textContent = `[${hk}] TOGGLE  ·  [ESC] EXIT`;
+        hotkeyStatus.title = `Hotkey: ${hk}  ·  Change with /prts-hotkey hotkey=...`;
+    }
+
+    // Keep toggle button title in sync
+    const tbtn = document.getElementById('prts-toggle-btn');
+    if (tbtn) tbtn.title = `Toggle PRTS Narrative Engine  [${state.hotkey || DEFAULT_HOTKEY}]`;
 
     renderSceneBlocks();
     renderPerceptionCards();
@@ -1782,6 +1914,43 @@ function registerCommands() {
         returns: ARGUMENT_TYPE.STRING,
     }));
 
+    // ── /prts-hotkey — Configure toggle hotkey ──
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'prts-hotkey',
+        callback: async (args, value) => {
+            const newKey = (args.hotkey || value || '').trim();
+            if (!newKey) {
+                return `Current hotkey: ${state.hotkey || DEFAULT_HOTKEY}  (e.g. /prts-hotkey hotkey=F12  or  /prts-hotkey hotkey=Ctrl+Shift+P)`;
+            }
+            // Validate: must parse to at least one key
+            const parsed = parseHotkey(newKey);
+            if (!parsed || !parsed.key) {
+                return `Invalid hotkey "${newKey}". Examples: F12, Ctrl+Shift+P, Alt+G`;
+            }
+            state.hotkey = newKey;
+            saveState();
+            updateUI();
+            return `Hotkey set to: ${newKey}`;
+        },
+        namedArgumentList: [
+            SlashCommandNamedArgument.fromProps({
+                name: 'hotkey',
+                description: 'Key combination, e.g. F12 or Ctrl+Shift+P',
+                typeList: [ARGUMENT_TYPE.STRING],
+                isRequired: false,
+            }),
+        ],
+        unnamedArgumentList: [
+            SlashCommandArgument.fromProps({
+                description: 'Key combination (alternative to hotkey= parameter)',
+                typeList: [ARGUMENT_TYPE.STRING],
+                isRequired: false,
+            }),
+        ],
+        helpString: 'Get or set the PRTS toggle hotkey. <code>/prts-hotkey hotkey=F12</code>',
+        returns: ARGUMENT_TYPE.STRING,
+    }));
+
     // ── /prts-reset — Full state reset ──
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'prts-reset',
@@ -1834,6 +2003,9 @@ function formatTime(isoStr) {
 
 jQuery(async () => {
     registerCommands();
+
+    // Register global hotkey listener ONCE (not re-registered on chat change)
+    document.addEventListener('keydown', onGlobalKeydown, { capture: true });
 
     eventSource.on(event_types.CHAT_CHANGED, () => {
         loadState();
