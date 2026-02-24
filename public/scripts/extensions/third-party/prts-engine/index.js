@@ -1,5 +1,5 @@
 /**
- * PRTS Narrative Engine — Pure UI Shell + Command Registry
+ * PRTS Narrative Engine v2 — Pure UI Shell + Command Registry
  *
  * Architecture:
  * - This file is ONLY a display shell and state store.
