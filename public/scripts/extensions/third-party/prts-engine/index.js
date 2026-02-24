@@ -50,9 +50,11 @@ const DEFAULT_HOTKEY = 'F12';
  */
 const PRTS_CHROME_SELECTORS = [
     '#top-bar',
+    '#top-settings-holder',
     '#left-nav-panel',
     '#right-nav-panel',
-    '#top-settings-holder',
+    '#rightNavHolder',  // right drawer wrapper (open independently of inner panel)
+    '#movingDivs',      // floating panels: Author's Note, CFG, logprobs, etc.
 ];
 
 const VIBES = [
