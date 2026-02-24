@@ -27,11 +27,11 @@
  *   When clicked, the STscript is executed via executeSlashCommandsWithOptions.
  */
 
-import { eventSource, event_types } from '../../../script.js';
-import { getContext } from '../../st-context.js';
-import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
-import { SlashCommand } from '../../slash-commands/SlashCommand.js';
-import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../slash-commands/SlashCommandArgument.js';
+import { eventSource, event_types } from '../../../../script.js';
+import { getContext } from '../../../st-context.js';
+import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
+import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
+import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../../slash-commands/SlashCommandArgument.js';
 
 // ═══════════════════════════════════════════════════════════
 //  CONSTANTS
