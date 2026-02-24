@@ -41,7 +41,12 @@ const EXTENSION_NAME = 'prts-engine';
 
 const MODES = { ACTOR: 'actor', DIRECTOR: 'director', EDITOR: 'editor' };
 
-const VIBES = ['tense', 'calm', 'melancholy', 'urgent', 'eerie', 'warm', 'chaotic', 'solemn'];
+const VIBES = [
+    { id: 'neutral',  icon: '⚬', color: '#ffb000', title: '中性' },
+    { id: 'conflict', icon: '⚡', color: '#ff3333', title: '冲突' },
+    { id: 'intimacy', icon: '♥', color: '#ff66cc', title: '官能' },
+    { id: 'horror',   icon: '☠', color: '#ffffff', title: '惊悚' },
+];
 
 /**
  * Default button → STscript bindings.
@@ -71,7 +76,7 @@ const DEFAULT_BINDINGS = {
 const DEFAULT_STATE = () => ({
     active: false,
     mode: MODES.ACTOR,
-    vibe: 'tense',
+    vibe: 'neutral',
     timeline: [],
     timelineIndex: -1,
     perceptionCards: [],
@@ -154,7 +159,16 @@ async function executeBinding(buttonId) {
     // Clear inputs after commit actions
     if (buttonId === 'prts-actor-commit') {
         const hubInput = document.getElementById('prts-hub-input');
-        if (hubInput) hubInput.value = '';
+        const finalText = document.getElementById('prts-final-text');
+        if (hubInput)   hubInput.value = '';
+        if (finalText)  finalText.value = '';
+        // Flip back to front
+        const hubContainer = document.getElementById('hub-container');
+        if (hubContainer) hubContainer.classList.remove('flipped');
+        const colPerc = document.getElementById('col-perc');
+        const colDedu = document.getElementById('col-dedu');
+        if (colPerc) colPerc.classList.remove('temp-disabled');
+        if (colDedu) colDedu.classList.remove('temp-disabled');
     }
     if (buttonId === 'prts-director-commit') {
         const dirInput = document.getElementById('prts-director-input');
@@ -235,119 +249,219 @@ function setVibe(vibe) {
 // ═══════════════════════════════════════════════════════════
 
 function buildHTML() {
-    const vibeChips = VIBES.map(v =>
-        `<button class="prts-vibe-chip${state.vibe === v ? ' active' : ''}" data-vibe="${v}">${v}</button>`,
+    const vibeButtons = VIBES.map(v =>
+        `<button class="vibe-btn${state.vibe === v.id ? ' active' : ''}" data-vibe="${v.id}" style="color:${v.color}" title="${v.title}">${v.icon}</button>`,
     ).join('');
 
+    const actorActive    = state.mode === MODES.ACTOR    ? ' active' : '';
+    const directorActive = state.mode === MODES.DIRECTOR ? ' active' : '';
+    const editorActive   = state.mode === MODES.EDITOR   ? ' active' : '';
+
     return `
-<div id="prts-engine" class="${state.active ? '' : 'hidden'}">
-    <!-- Top Stage -->
-    <div class="prts-top-stage">
+<div id="prts-engine" class="${state.active ? 'console-closed' : 'hidden'}">
+
+    <!-- CRT scanline overlay -->
+    <div id="channel-noise"></div>
+
+    <!-- ═══ Top Stage ═══ -->
+    <div class="top-stage" id="prts-top-stage">
+
         <!-- Story Canvas -->
-        <div class="prts-story-canvas">
-            <div class="prts-story-scroll" id="prts-story-scroll">
-                <div id="prts-scene-container"></div>
-            </div>
-            <div class="prts-gen-overlay" id="prts-gen-overlay">
-                <div class="prts-gen-spinner"></div>
-                <span class="prts-gen-label">GENERATING...</span>
-                <button class="prts-gen-stop" id="prts-gen-stop">STOP</button>
-            </div>
+        <div class="story-canvas" id="prts-story-canvas">
+            <span class="scene-header" id="prts-scene-header">PRTS // NARRATIVE ENGINE</span>
+            <div id="prts-scene-container"></div>
         </div>
 
-        <!-- Side Panel -->
-        <div class="prts-side-panel" id="prts-side-panel">
-            <div class="prts-side-tabs">
-                <button class="prts-side-tab active" data-panel="visual">Visual</button>
-                <button class="prts-side-tab" data-panel="history">History</button>
-                <button class="prts-side-tab" data-panel="custom">Items</button>
-            </div>
-            <div class="prts-side-content">
-                <div class="prts-side-section active" data-panel="visual">
-                    <div class="prts-visual-frame" id="prts-cg-frame">
-                        <span>CG VIEWPORT</span>
-                    </div>
-                    <div class="prts-portrait-frame" id="prts-portrait-frame">
-                        <span>?</span>
-                    </div>
-                </div>
-                <div class="prts-side-section" data-panel="history">
-                    <div id="prts-history-list"></div>
-                </div>
-                <div class="prts-side-section" data-panel="custom">
-                    <div id="prts-inventory-list"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Console Wrapper -->
-    <div class="prts-console-wrapper expanded" id="prts-console-wrapper">
-        <div class="prts-console-toggle" id="prts-console-toggle">
-            <span class="prts-toggle-arrow">▲</span>
-            <span class="prts-toggle-label">Console</span>
-            <span class="prts-mode-indicator" id="prts-mode-indicator" data-mode="${state.mode}">${state.mode.toUpperCase()}</span>
-        </div>
-        <div class="prts-console-body">
-            <!-- Mode Shifter -->
-            <div class="prts-mode-shifter">
-                <button class="prts-mode-btn${state.mode === 'actor' ? ' active' : ''}" data-mode="actor">Actor</button>
-                <button class="prts-mode-btn${state.mode === 'director' ? ' active' : ''}" data-mode="director">Director</button>
-                <button class="prts-mode-btn${state.mode === 'editor' ? ' active' : ''}" data-mode="editor">Editor</button>
+        <!-- Right Side Frame -->
+        <div class="sd-frame">
+            <!-- Tab nav -->
+            <div class="side-tabs">
+                <button class="side-tab-btn chamfer-btn active" data-tab="visual">[ VISUAL ]</button>
+                <button class="side-tab-btn chamfer-btn" data-tab="history">[ HISTORY ]</button>
+                <button class="side-tab-btn chamfer-btn" data-tab="custom">[ CUSTOM ]</button>
             </div>
 
-            <!-- Actor Mode -->
-            <div class="prts-mode-panel${state.mode === 'actor' ? ' active' : ''}" data-mode="actor">
-                <div class="prts-actor-layout">
-                    <div class="prts-actor-column">
-                        <div class="prts-column-header">Action Hub</div>
-                        <textarea class="prts-hub-input" id="prts-hub-input"
-                            placeholder="Describe your action, dialogue, or intention..."></textarea>
-                        <div class="prts-vibe-row">${vibeChips}</div>
+            <!-- Content stack -->
+            <div class="side-content-wrapper">
+
+                <!-- 1. Visual panel -->
+                <div id="panel-visual" class="side-panel active">
+                    <div class="visual-cg chamfer">
+                        <div class="cam-label">CAM_01 // VISUAL_FEED</div>
+                        <div class="sd-placeholder" id="prts-cg-frame">AWAITING_INPUT...</div>
                     </div>
-                    <div class="prts-actor-column">
-                        <div class="prts-column-header">Perception</div>
-                        <div class="prts-card-stack" id="prts-perception-stack"></div>
-                        <button class="prts-card-add" id="prts-add-perception">+ Generate Perception</button>
-                    </div>
-                    <div class="prts-actor-column">
-                        <div class="prts-column-header">Deduction</div>
-                        <div class="prts-card-stack" id="prts-deduction-stack"></div>
-                        <button class="prts-card-add" id="prts-add-deduction">+ Generate Deduction</button>
+                    <div class="visual-portrait chamfer">
+                        <div class="cam-label" style="color:var(--ak-yellow)">CAM_02 // PORTRAIT</div>
+                        <div class="silhouette"></div>
+                        <span class="p-name" id="prts-portrait-name">UNKNOWN ENTITY</span>
                     </div>
                 </div>
-                <button class="prts-commit-btn" id="prts-actor-commit">
-                    <span>▶</span> COMMIT ACTION
-                </button>
-            </div>
 
-            <!-- Director Mode -->
-            <div class="prts-mode-panel${state.mode === 'director' ? ' active' : ''}" data-mode="director">
-                <textarea class="prts-director-override" id="prts-director-input"
-                    placeholder="Force a narrative event, introduce a plot twist, change the weather..."></textarea>
-                <button class="prts-director-commit" id="prts-director-commit">
-                    <span>◆</span> OVERRIDE
-                </button>
-            </div>
-
-            <!-- Editor Mode -->
-            <div class="prts-mode-panel${state.mode === 'editor' ? ' active' : ''}" data-mode="editor">
-                <div class="prts-timeline-viewport" id="prts-timeline-viewport"></div>
-                <div class="prts-editor-actions">
-                    <button class="prts-editor-btn" id="prts-editor-branch">Branch</button>
-                    <button class="prts-editor-btn" id="prts-editor-rewind">Rewind</button>
-                    <button class="prts-editor-btn" id="prts-editor-bookmark">Bookmark</button>
+                <!-- 2. History panel -->
+                <div id="panel-history" class="side-panel">
+                    <div class="history-list chamfer" id="prts-history-list"></div>
                 </div>
-            </div>
 
-            <!-- Auto-Progress Bar (always visible) -->
-            <div class="prts-autoprogress">
-                <button class="prts-auto-btn" id="prts-auto-wait">Wait</button>
-                <button class="prts-auto-btn" id="prts-auto-continue">Continue</button>
-                <button class="prts-auto-btn" id="prts-auto-skip">Skip</button>
+                <!-- 3. Custom panel (map / terminal / inventory) -->
+                <div id="panel-custom" class="side-panel">
+                    <div class="custom-nav">
+                        <button class="c-nav-btn active" data-custom="map">MAP</button>
+                        <button class="c-nav-btn" data-custom="term">TERMINAL</button>
+                        <button class="c-nav-btn" data-custom="inv">INVENTORY</button>
+                    </div>
+                    <div class="custom-viewport chamfer">
+                        <div id="c-view-map" class="c-view active">
+                            <span class="c-label">TACTICAL_MAP // SECTOR</span>
+                            <div class="radar-bg"></div>
+                            <div class="radar-ping"></div>
+                        </div>
+                        <div id="c-view-term" class="c-view">
+                            <span class="c-label" style="color:#00ff00">PRTS_TERMINAL_LINK</span>
+                            <div class="term-screen" id="prts-terminal">&gt; PRTS ONLINE<br>&gt; _</div>
+                        </div>
+                        <div id="c-view-inv" class="c-view">
+                            <span class="c-label">GEAR_INVENTORY //</span>
+                            <div class="inv-grid" id="prts-inventory-list"></div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
+
+    <!-- ═══ Console Wrapper ═══ -->
+    <div class="console-wrapper" id="prts-console-wrapper">
+
+        <!-- Toggle tab (trapezoid) -->
+        <button class="console-toggle" id="prts-console-toggle">▲ 唤出战术矩阵 [ EXPAND ]</button>
+
+        <!-- Mode shifter (floats above, hidden when console closed) -->
+        <div class="mode-shifter chamfer-btn">
+            <button class="mode-btn${actorActive}"    data-mode="actor">[01] ACTOR</button>
+            <button class="mode-btn${directorActive}" data-mode="director">[02] DIRECTOR</button>
+            <button class="mode-btn${editorActive}"   data-mode="editor">[03] EDITOR</button>
+        </div>
+
+        <!-- Auto-progress bar (visible when console closed) -->
+        <div class="auto-progress-bar">
+            <button class="auto-btn" id="prts-auto-wait">⏳ 静观其变 (Wait &amp; See)</button>
+            <button class="auto-btn" id="prts-auto-continue">▶ 自然推进 (Auto-Progress)</button>
+            <button class="auto-btn" id="prts-auto-skip">⏭ 快速跳过 (Fast Forward)</button>
+        </div>
+
+        <!-- Expanded console panels -->
+        <div class="expanded-console" id="prts-expanded-console">
+
+            <!-- [01] Actor Mode -->
+            <div class="dock-container${actorActive}" id="mode-actor">
+                <div style="flex: 0 0 calc(65% - 20px); display: flex; gap: 20px;">
+
+                    <!-- Hub column (flip card) -->
+                    <div class="matrix-col" id="col-hub" style="flex: 1.6; margin: 0;">
+                        <div class="flip-container" id="hub-container">
+                            <div class="flipper">
+                                <!-- Front: intent input -->
+                                <div class="front">
+                                    <div class="m-header">
+                                        <span>TACTICAL_HUB // 中枢</span>
+                                        <div class="vibe-controls">${vibeButtons}</div>
+                                    </div>
+                                    <div class="t-list" id="prts-hub-options"></div>
+                                    <div class="m-input-area" style="flex-direction: column;">
+                                        <span style="font-family:var(--font-tech); font-size:0.7rem; color:var(--text-dim);">DIRECTIVE_OVERRIDE // 意图覆写</span>
+                                        <input type="text" class="m-input" id="prts-hub-input" placeholder="输入行动意图...">
+                                    </div>
+                                    <div class="action-bar">
+                                        <span style="font-family:var(--font-tech); font-size:0.7rem; color:var(--text-dim);" id="prts-hub-status">AWAITING...</span>
+                                        <button class="btn-action warning chamfer-btn" id="prts-flip-btn">INITIATE_FLIP &gt;&gt;</button>
+                                    </div>
+                                </div>
+                                <!-- Back: final text + commit -->
+                                <div class="back">
+                                    <div class="m-header" style="justify-content:center;">EXECUTION_TRACK // 最终轨迹</div>
+                                    <textarea class="final-textarea" id="prts-final-text" placeholder="最终行动文本将在此呈现..."></textarea>
+                                    <div class="action-bar">
+                                        <button class="btn-action chamfer-btn" id="prts-flip-back-btn"
+                                            style="background:transparent; border:1px solid var(--ak-yellow); color:var(--ak-yellow) !important;">&lt;&lt; ABORT</button>
+                                        <button class="btn-action chamfer-btn warning" id="prts-actor-commit">COMMIT //</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Deduction column -->
+                    <div class="matrix-col chamfer" id="col-dedu" style="flex: 1; margin: 0;">
+                        <div class="m-header">
+                            <span style="color:var(--ak-purple)">DEDUCTION // 思考</span>
+                            <span class="link-toggle" style="color:var(--ak-purple)" id="prts-dedu-link-toggle">LINKED</span>
+                        </div>
+                        <div class="stack-area" id="prts-deduction-stack"></div>
+                        <div class="m-input-area">
+                            <input type="text" class="m-input" id="prts-inp-dedu" placeholder="推演逻辑...">
+                            <button class="btn-micro" id="prts-add-deduction">⟳</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Perception column -->
+                <div style="flex: 0 0 calc(35% - 20px); display: flex;">
+                    <div class="matrix-col chamfer" id="col-perc" style="width: 100%; margin: 0;">
+                        <div class="m-header">
+                            <span style="color:var(--ak-cyan)">PERCEPTION // 感官</span>
+                            <span class="link-toggle" style="color:var(--ak-cyan)" id="prts-perc-link-toggle">LINKED</span>
+                        </div>
+                        <div class="stack-area" id="prts-perception-stack"></div>
+                        <div class="m-input-area">
+                            <input type="text" class="m-input" id="prts-inp-perc" placeholder="聚焦方向...">
+                            <button class="btn-micro" id="prts-add-perception">⟳</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [02] Director Mode -->
+            <div class="dock-container${directorActive}" id="mode-director">
+                <div class="dir-wrapper">
+                    <div class="dir-title">WORLD_OVERRIDE // 机械降神</div>
+                    <textarea class="dir-input" id="prts-director-input" placeholder="输入强制改变世界因果律的事件... (例如: 穹顶突然坍塌)"></textarea>
+                    <button class="btn-action chamfer-btn" style="background:var(--ak-red); font-size:1rem; padding:10px 30px;"
+                        id="prts-director-commit">EXECUTE_OVERRIDE</button>
+                </div>
+                <div style="flex: 0 0 calc(35% - 20px); display: flex; align-items: center; justify-content: center; opacity: 0.3; border-left: 1px solid var(--border-dim);">
+                    <div style="font-family:var(--font-tech); color:var(--text-dim); text-align:center; letter-spacing:2px;">
+                        [ SYSTEM_ALERT ]<br>VISUAL_FEED_BYPASSED<br>GOD_MODE_ACTIVE
+                    </div>
+                </div>
+            </div>
+
+            <!-- [03] Editor Mode -->
+            <div class="dock-container${editorActive}" id="mode-editor">
+                <div style="width: 100%;">
+                    <div class="ed-header">
+                        <span class="ed-title">NARRATIVE PACE STARTER // 时空拨盘</span>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <span style="font-family:var(--font-tech); font-size:0.75rem; color:var(--text-dim);">SEARCH_PAST:</span>
+                            <input type="text" class="m-input" style="width:200px;" id="prts-tl-search" placeholder="输入记忆碎片提取闪回点...">
+                        </div>
+                    </div>
+                    <div class="timeline-viewport">
+                        <div class="timeline-needle"></div>
+                        <div class="timeline-track" id="prts-timeline-track"></div>
+                    </div>
+                    <div class="ed-footer">
+                        <span class="ed-info" id="prts-tl-info">SELECTED: [ CURRENT ] - 维持当前时间线</span>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn-action chamfer-btn" style="background:var(--text-dim);" id="prts-editor-branch">BRANCH &gt;&gt;</button>
+                            <button class="btn-action chamfer-btn" style="background:var(--text-main); color:#000;" id="prts-editor-rewind">START_SEQUENCE &gt;&gt;</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /expanded-console -->
+    </div><!-- /console-wrapper -->
 
     <!-- Status Bar -->
     <div class="prts-status-bar">
@@ -359,6 +473,7 @@ function buildHTML() {
         <span id="prts-status-vibe">VIBE: ${state.vibe.toUpperCase()}</span>
         <span id="prts-status-scene">SCENES: ${state.sceneBlocks.length}</span>
     </div>
+
 </div>`;
 }
 
@@ -396,11 +511,23 @@ function updateUI() {
     const engine = document.getElementById('prts-engine');
     if (!engine) return;
 
-    engine.classList.toggle('hidden', !state.active);
+    // Show/hide engine
+    if (!state.active) {
+        engine.classList.add('hidden');
+        engine.classList.remove('console-open', 'console-closed');
+    } else {
+        engine.classList.remove('hidden');
+        // Ensure a console state class exists
+        if (!engine.classList.contains('console-open') && !engine.classList.contains('console-closed')) {
+            engine.classList.add('console-closed');
+        }
+    }
 
+    // ST toggle button
     const toggleBtn = document.getElementById('prts-toggle-btn');
     if (toggleBtn) toggleBtn.classList.toggle('active', state.active);
 
+    // Hide ST chat & input when active
     const chatBlock = document.getElementById('chat');
     const sendForm = document.getElementById('send_form');
     if (chatBlock) chatBlock.style.display = state.active ? 'none' : '';
@@ -408,52 +535,47 @@ function updateUI() {
 
     if (!state.active) return;
 
-    // Mode indicator
-    const modeInd = document.getElementById('prts-mode-indicator');
-    if (modeInd) {
-        modeInd.dataset.mode = state.mode;
-        modeInd.textContent = state.mode.toUpperCase();
-    }
-
-    // Mode panels
-    engine.querySelectorAll('.prts-mode-btn').forEach(btn => {
+    // Mode buttons
+    engine.querySelectorAll('.mode-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.mode === state.mode);
     });
-    engine.querySelectorAll('.prts-mode-panel').forEach(panel => {
-        panel.classList.toggle('active', panel.dataset.mode === state.mode);
+
+    // Dock containers
+    engine.querySelectorAll('.dock-container').forEach(el => {
+        el.classList.toggle('active', el.id === `mode-${state.mode}`);
     });
 
-    // Vibe chips
-    engine.querySelectorAll('.prts-vibe-chip').forEach(chip => {
-        chip.classList.toggle('active', chip.dataset.vibe === state.vibe);
+    // Vibe buttons
+    engine.querySelectorAll('.vibe-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.vibe === state.vibe);
     });
 
-    // Generation overlay
-    const overlay = document.getElementById('prts-gen-overlay');
-    if (overlay) overlay.classList.toggle('active', state.generating);
+    // Hub vibe glow class
+    const colHub = document.getElementById('col-hub');
+    if (colHub) {
+        colHub.classList.remove('vibe-conflict', 'vibe-intimacy', 'vibe-horror');
+        if (state.vibe === 'conflict') colHub.classList.add('vibe-conflict');
+        else if (state.vibe === 'intimacy') colHub.classList.add('vibe-intimacy');
+        else if (state.vibe === 'horror') colHub.classList.add('vibe-horror');
+    }
 
-    // Commit buttons disabled during generation
+    // Commit button state
     const actorCommit = document.getElementById('prts-actor-commit');
     const directorCommit = document.getElementById('prts-director-commit');
-    if (actorCommit) {
-        actorCommit.disabled = state.generating;
-        actorCommit.classList.toggle('generating', state.generating);
-    }
+    if (actorCommit) actorCommit.disabled = state.generating;
     if (directorCommit) directorCommit.disabled = state.generating;
 
     // Status bar
     const dot = document.getElementById('prts-status-dot');
     const statusText = document.getElementById('prts-status-text');
-    if (dot) {
-        dot.className = `prts-status-dot ${state.generating ? 'generating' : 'idle'}`;
-    }
+    if (dot)        dot.className = `prts-status-dot ${state.generating ? 'generating' : 'idle'}`;
     if (statusText) statusText.textContent = state.generating ? 'GENERATING' : 'IDLE';
 
-    const modeStatus = document.getElementById('prts-status-mode');
-    const vibeStatus = document.getElementById('prts-status-vibe');
+    const modeStatus  = document.getElementById('prts-status-mode');
+    const vibeStatus  = document.getElementById('prts-status-vibe');
     const sceneStatus = document.getElementById('prts-status-scene');
-    if (modeStatus) modeStatus.textContent = `MODE: ${state.mode.toUpperCase()}`;
-    if (vibeStatus) vibeStatus.textContent = `VIBE: ${state.vibe.toUpperCase()}`;
+    if (modeStatus)  modeStatus.textContent  = `MODE: ${state.mode.toUpperCase()}`;
+    if (vibeStatus)  vibeStatus.textContent  = `VIBE: ${state.vibe.toUpperCase()}`;
     if (sceneStatus) sceneStatus.textContent = `SCENES: ${state.sceneBlocks.length}`;
 
     renderSceneBlocks();
@@ -470,35 +592,42 @@ function renderSceneBlocks() {
 
     container.innerHTML = state.sceneBlocks.map((block, i) => {
         const sourceLabel = block.source ? block.source.replace(/_/g, ' ').toUpperCase() : '';
+        const cssClass = block.source === 'actor_action' ? 'highlight-action'
+            : block.source === 'director_override' ? 'highlight-director' : '';
         return `
             <div class="prts-scene-block" style="animation-delay: ${i * 0.05}s">
-                ${sourceLabel ? `<span class="scene-label">${escapeHtml(sourceLabel)}</span>` : ''}
-                ${formatNarrative(block.text)}
+                ${sourceLabel ? `<span class="scene-header" style="margin-bottom:8px;">${escapeHtml(sourceLabel)}</span>` : ''}
+                <p class="${cssClass}">${formatNarrative(block.text)}</p>
             </div>
             ${i < state.sceneBlocks.length - 1 ? '<div class="prts-scene-divider">◆</div>' : ''}
         `;
     }).join('');
 
     if (state.generating) {
-        const lastBlock = container.querySelector('.prts-scene-block:last-child');
+        const lastBlock = container.querySelector('.prts-scene-block:last-of-type p');
         if (lastBlock) {
             lastBlock.insertAdjacentHTML('beforeend', '<span class="prts-cursor"></span>');
         }
     }
 
-    const scroll = document.getElementById('prts-story-scroll');
-    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    // Scroll story canvas to bottom
+    const canvas = document.getElementById('prts-story-canvas');
+    if (canvas) canvas.scrollTop = canvas.scrollHeight;
 }
 
 function renderPerceptionCards() {
     const stack = document.getElementById('prts-perception-stack');
     if (!stack) return;
 
-    stack.innerHTML = state.perceptionCards.map(card => `
-        <div class="prts-card perception" data-id="${card.id}">
-            <span class="card-type">Perception</span>
-            <button class="card-close" data-card-type="perception" data-card-id="${card.id}">×</button>
-            ${escapeHtml(card.text)}
+    stack.innerHTML = state.perceptionCards.map((card, i) => `
+        <div class="m-card collapsed" data-id="${card.id}" onclick="this.classList.toggle('collapsed'); this.querySelector('.m-card-header span').innerHTML = this.classList.contains('collapsed') ? this.querySelector('.m-card-header span').innerHTML.replace('[-]','[+]') : this.querySelector('.m-card-header span').innerHTML.replace('[+]','[-]')">
+            <div class="m-card-header">
+                <span>[+] S.${String(i + 1).padStart(2, '0')} 感官</span>
+                <div class="card-tools">
+                    <button class="btn-micro card-close" data-card-type="perception" data-card-id="${card.id}" onclick="event.stopPropagation()">✕</button>
+                </div>
+            </div>
+            <div class="m-card-content">${escapeHtml(card.text)}</div>
         </div>
     `).join('');
 }
@@ -507,28 +636,54 @@ function renderDeductionCards() {
     const stack = document.getElementById('prts-deduction-stack');
     if (!stack) return;
 
-    stack.innerHTML = state.deductionCards.map(card => `
-        <div class="prts-card deduction" data-id="${card.id}">
-            <span class="card-type">Deduction</span>
-            <button class="card-close" data-card-type="deduction" data-card-id="${card.id}">×</button>
-            ${escapeHtml(card.text)}
+    stack.innerHTML = state.deductionCards.map((card, i) => `
+        <div class="m-card dedu collapsed" data-id="${card.id}" onclick="this.classList.toggle('collapsed'); this.querySelector('.m-card-header span').innerHTML = this.classList.contains('collapsed') ? this.querySelector('.m-card-header span').innerHTML.replace('[-]','[+]') : this.querySelector('.m-card-header span').innerHTML.replace('[+]','[-]')">
+            <div class="m-card-header">
+                <span>[+] D.${String(i + 1).padStart(2, '0')} 推演</span>
+                <div class="card-tools">
+                    <button class="btn-micro card-close" data-card-type="deduction" data-card-id="${card.id}" onclick="event.stopPropagation()">✕</button>
+                </div>
+            </div>
+            <div class="m-card-content">${escapeHtml(card.text)}</div>
         </div>
     `).join('');
 }
 
 function renderTimeline() {
-    const viewport = document.getElementById('prts-timeline-viewport');
-    if (!viewport) return;
+    const track = document.getElementById('prts-timeline-track');
+    if (!track) return;
 
-    viewport.innerHTML = state.timeline.map((node, i) => `
-        <div class="prts-timeline-node${i === state.timelineIndex ? ' active' : ''}" data-index="${i}">
-            <div class="node-label">${escapeHtml(node.type.replace(/_/g, ' '))}</div>
-            <div class="node-desc">${escapeHtml(node.desc)}</div>
-        </div>
-    `).join('');
+    const NODE_SPACING = 150;
 
-    const activeNode = viewport.querySelector('.prts-timeline-node.active');
-    if (activeNode) activeNode.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+    track.innerHTML = state.timeline.map((node, i) => {
+        const isLast = i === state.timeline.length - 1;
+        const isActive = i === state.timelineIndex;
+        // Map internal type to display type
+        const typeClass = node.type.includes('past') ? 'type-past'
+            : node.type.includes('future') ? 'type-future' : 'type-current';
+        const timeLabel = formatTime(node.timestamp) || node.type;
+        return `
+            <div class="tl-node ${typeClass}${isActive ? ' active' : ''}${isLast ? ' last-node' : ''}"
+                 style="left:${i * NODE_SPACING}px" data-index="${i}">
+                <div class="tl-time">${escapeHtml(timeLabel)}</div>
+                <div class="tl-dot"></div>
+                <div class="tl-tag">${escapeHtml(node.desc.substring(0, 20))}</div>
+            </div>
+        `;
+    }).join('');
+
+    // Shift track so active node is centered
+    const offset = -(state.timelineIndex * NODE_SPACING);
+    track.style.transform = `translateX(${offset}px)`;
+
+    // Update info label
+    const info = document.getElementById('prts-tl-info');
+    if (info && state.timeline[state.timelineIndex]) {
+        const node = state.timeline[state.timelineIndex];
+        info.textContent = `SELECTED: [ ${formatTime(node.timestamp)} ] - ${node.desc.substring(0, 40)}`;
+    } else if (info) {
+        info.textContent = 'SELECTED: [ CURRENT ] - 维持当前时间线';
+    }
 }
 
 function renderHistory() {
@@ -536,30 +691,42 @@ function renderHistory() {
     if (!list) return;
 
     const entries = [...state.historyLog].reverse().slice(0, 50);
-    list.innerHTML = entries.map(entry => `
-        <div class="prts-history-entry">
-            <span class="entry-time">${formatTime(entry.timestamp)} [${entry.type}]</span>
-            <span class="entry-text">${escapeHtml(entry.text)}</span>
-        </div>
-    `).join('');
+    if (entries.length === 0) {
+        list.innerHTML = '<div class="hist-item" style="color:var(--text-dim); font-size:0.8rem;">No history yet.</div>';
+        return;
+    }
+    list.innerHTML = entries.map(entry => {
+        const isAction = entry.type === 'actor_commit' || entry.type === 'auto_wait' || entry.type === 'auto_continue' || entry.type === 'auto_skip';
+        return `
+            <div class="hist-item${isAction ? ' action' : ''}">
+                <span class="hist-time">${formatTime(entry.timestamp)} [${entry.type}]</span>
+                ${escapeHtml(entry.text)}
+            </div>
+        `;
+    }).join('');
 }
 
 function renderInventory() {
     const list = document.getElementById('prts-inventory-list');
     if (!list) return;
 
-    if (state.inventory.length === 0) {
-        list.innerHTML = '<div style="color: var(--prts-text-dim); font-size: 11px; padding: 8px;">No items yet</div>';
-        return;
-    }
+    // Render filled slots first, then empty slots to fill an 8-slot grid
+    const slots = [...state.inventory];
+    const totalSlots = Math.max(8, Math.ceil(slots.length / 4) * 4);
 
-    list.innerHTML = state.inventory.map(item => `
-        <div class="prts-inventory-item">
-            <div class="item-icon">${escapeHtml(item.icon || '?')}</div>
-            <span class="item-name">${escapeHtml(item.name)}</span>
-            <span class="item-qty">${item.qty || ''}</span>
+    let html = slots.map(item => `
+        <div class="inv-slot filled" title="${escapeHtml(item.name)}">
+            <span>${escapeHtml(item.icon || '?')}</span>
+            ${item.qty ? `<span class="inv-count">${escapeHtml(String(item.qty))}</span>` : ''}
         </div>
     `).join('');
+
+    // Pad with empty slots
+    for (let i = slots.length; i < totalSlots; i++) {
+        html += '<div class="inv-slot"></div>';
+    }
+
+    list.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -572,7 +739,7 @@ function bindEvents() {
     const engine = document.getElementById('prts-engine');
     if (!engine) return;
 
-    // Toggle button
+    // ── ST header toggle button ──
     const toggleBtn = document.getElementById('prts-toggle-btn');
     if (toggleBtn) {
         toggleBtn.addEventListener('click', () => {
@@ -582,35 +749,109 @@ function bindEvents() {
         });
     }
 
-    // Console toggle
+    // ── Console open/close ──
     const consoleToggle = document.getElementById('prts-console-toggle');
     if (consoleToggle) {
         consoleToggle.addEventListener('click', () => {
-            const wrapper = document.getElementById('prts-console-wrapper');
-            if (wrapper) wrapper.classList.toggle('expanded');
+            const isOpen = engine.classList.contains('console-open');
+            engine.classList.toggle('console-open',  !isOpen);
+            engine.classList.toggle('console-closed',  isOpen);
+            consoleToggle.textContent = isOpen
+                ? '▲ 唤出战术矩阵 [ EXPAND ]'
+                : '▼ 收起战术矩阵 [ COLLAPSE ]';
+            // Auto-scroll story canvas after transition
+            setTimeout(() => {
+                const canvas = document.getElementById('prts-story-canvas');
+                if (canvas) canvas.scrollTop = canvas.scrollHeight;
+            }, 650);
         });
     }
 
-    // Mode switcher (pure local)
-    engine.querySelectorAll('.prts-mode-btn').forEach(btn => {
+    // ── Mode switcher ──
+    engine.querySelectorAll('.mode-btn').forEach(btn => {
         btn.addEventListener('click', () => setMode(btn.dataset.mode));
     });
 
-    // Vibe chips (pure local)
-    engine.querySelectorAll('.prts-vibe-chip').forEach(chip => {
-        chip.addEventListener('click', () => setVibe(chip.dataset.vibe));
+    // ── Vibe buttons ──
+    engine.querySelectorAll('.vibe-btn').forEach(btn => {
+        btn.addEventListener('click', () => setVibe(btn.dataset.vibe));
     });
 
-    // Side panel tabs (pure local)
-    engine.querySelectorAll('.prts-side-tab').forEach(tab => {
+    // ── Side panel tabs ──
+    engine.querySelectorAll('.side-tab-btn').forEach(tab => {
         tab.addEventListener('click', () => {
-            engine.querySelectorAll('.prts-side-tab').forEach(t => t.classList.remove('active'));
-            engine.querySelectorAll('.prts-side-section').forEach(s => s.classList.remove('active'));
+            engine.querySelectorAll('.side-tab-btn').forEach(t => t.classList.remove('active'));
+            engine.querySelectorAll('.side-panel').forEach(p => p.classList.remove('active'));
             tab.classList.add('active');
-            const section = engine.querySelector(`.prts-side-section[data-panel="${tab.dataset.panel}"]`);
-            if (section) section.classList.add('active');
+            const panel = document.getElementById(`panel-${tab.dataset.tab}`);
+            if (panel) panel.classList.add('active');
         });
     });
+
+    // ── Custom sub-panel nav ──
+    engine.querySelectorAll('.c-nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            engine.querySelectorAll('.c-nav-btn').forEach(b => b.classList.remove('active'));
+            engine.querySelectorAll('.c-view').forEach(v => v.classList.remove('active'));
+            btn.classList.add('active');
+            const view = document.getElementById(`c-view-${btn.dataset.custom}`);
+            if (view) view.classList.add('active');
+        });
+    });
+
+    // ── Flip card (hub front → back) ──
+    const flipBtn = document.getElementById('prts-flip-btn');
+    const flipBackBtn = document.getElementById('prts-flip-back-btn');
+    const hubContainer = document.getElementById('hub-container');
+
+    if (flipBtn && hubContainer) {
+        flipBtn.addEventListener('click', () => {
+            hubContainer.classList.add('flipped');
+            // Dim linked columns
+            const colPerc = document.getElementById('col-perc');
+            const colDedu = document.getElementById('col-dedu');
+            if (colPerc) colPerc.classList.add('temp-disabled');
+            if (colDedu) colDedu.classList.add('temp-disabled');
+            // Pre-fill final textarea with hub input value
+            const hubInput = document.getElementById('prts-hub-input');
+            const finalText = document.getElementById('prts-final-text');
+            if (hubInput && finalText && !finalText.value) {
+                finalText.value = hubInput.value;
+            }
+        });
+    }
+
+    if (flipBackBtn && hubContainer) {
+        flipBackBtn.addEventListener('click', () => {
+            hubContainer.classList.remove('flipped');
+            const colPerc = document.getElementById('col-perc');
+            const colDedu = document.getElementById('col-dedu');
+            if (colPerc) colPerc.classList.remove('temp-disabled');
+            if (colDedu) colDedu.classList.remove('temp-disabled');
+        });
+    }
+
+    // ── Link-toggle for columns ──
+    const percLinkToggle = document.getElementById('prts-perc-link-toggle');
+    const deduLinkToggle = document.getElementById('prts-dedu-link-toggle');
+
+    if (percLinkToggle) {
+        percLinkToggle.addEventListener('click', () => {
+            const col = document.getElementById('col-perc');
+            if (!col) return;
+            col.classList.toggle('unlinked');
+            percLinkToggle.textContent = col.classList.contains('unlinked') ? 'SEVERED' : 'LINKED';
+        });
+    }
+
+    if (deduLinkToggle) {
+        deduLinkToggle.addEventListener('click', () => {
+            const col = document.getElementById('col-dedu');
+            if (!col) return;
+            col.classList.toggle('unlinked');
+            deduLinkToggle.textContent = col.classList.contains('unlinked') ? 'SEVERED' : 'LINKED';
+        });
+    }
 
     // ── All action buttons → executeBinding (STscript) ──
     const boundButtons = [
@@ -623,8 +864,6 @@ function bindEvents() {
         'prts-auto-skip',
         'prts-editor-branch',
         'prts-editor-rewind',
-        'prts-editor-bookmark',
-        'prts-gen-stop',
     ];
 
     for (const id of boundButtons) {
@@ -634,34 +873,35 @@ function bindEvents() {
         }
     }
 
-    // Card close buttons (delegated — pure local state removal)
+    // ── Card close (delegated) ──
     engine.addEventListener('click', (e) => {
         const closeBtn = e.target.closest('.card-close');
         if (closeBtn) {
+            e.stopPropagation();
             removeCard(closeBtn.dataset.cardType, Number(closeBtn.dataset.cardId));
         }
     });
 
-    // Timeline node click (pure local)
+    // ── Timeline node click ──
     engine.addEventListener('click', (e) => {
-        const node = e.target.closest('.prts-timeline-node');
+        const node = e.target.closest('.tl-node');
         if (node) {
             const index = Number(node.dataset.index);
             if (!isNaN(index) && index >= 0 && index < state.timeline.length) {
                 state.timelineIndex = index;
                 saveState();
-                updateUI();
+                renderTimeline();
             }
         }
     });
 
-    // Keyboard shortcut: Enter in hub input = actor commit
+    // ── Enter in hub input → flip to back ──
     const hubInput = document.getElementById('prts-hub-input');
     if (hubInput) {
         hubInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                executeBinding('prts-actor-commit');
+                if (flipBtn) flipBtn.click();
             }
         });
     }
@@ -695,10 +935,10 @@ function streamAppend(token) {
         liveBlock.className = 'prts-scene-block prts-live-block';
         container.appendChild(liveBlock);
     }
-    liveBlock.innerHTML = formatNarrative(streamBuffer) + '<span class="prts-cursor"></span>';
+    liveBlock.innerHTML = `<p>${formatNarrative(streamBuffer)}<span class="prts-cursor"></span></p>`;
 
-    const scroll = document.getElementById('prts-story-scroll');
-    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    const canvas = document.getElementById('prts-story-canvas');
+    if (canvas) canvas.scrollTop = canvas.scrollHeight;
 }
 
 function streamCommit(source) {
@@ -805,7 +1045,7 @@ function registerCommands() {
         namedArgumentList: [
             SlashCommandNamedArgument.fromProps({
                 name: 'vibe',
-                description: `One of: ${VIBES.join(', ')}`,
+                description: `One of: ${VIBES.map(v => v.id).join(', ')}`,
                 typeList: [ARGUMENT_TYPE.STRING],
                 isRequired: true,
             }),
