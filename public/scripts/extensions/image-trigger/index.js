@@ -5,7 +5,6 @@ import {
     extension_settings,
     renderExtensionTemplateAsync,
 } from '../../extensions.js';
-import { executeSlashCommandsWithOptions } from '../../slash-commands.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../slash-commands/SlashCommand.js';
 import { dragElement } from '../../RossAscends-mods.js';
@@ -17,6 +16,7 @@ const defaultSettings = {
 };
 
 let isGenerating = false;
+let pinnedCounter = 0;
 
 function loadSettings() {
     if (!extension_settings[MODULE_NAME]) {
@@ -82,7 +82,8 @@ function setSpinner(visible) {
 
 /**
  * Trigger image generation (fire-and-forget).
- * Uses the existing /imagine command with quiet=true so nothing is posted to chat.
+ * Reads the prompt directly from the SD extension's "Common prompt prefix" field
+ * and generates in FREE mode without invoking the LLM.
  * The generated image is displayed in the floating panel.
  */
 async function triggerGeneration() {
@@ -91,32 +92,68 @@ async function triggerGeneration() {
         return;
     }
 
+    // Read prompt directly from SD extension's prompt prefix field
+    const prompt = (extension_settings.sd?.prompt_prefix || '').trim();
+    if (!prompt) {
+        setStatus('Error: SD prompt prefix is empty');
+        return;
+    }
+
+    // Temporarily clear prompt_prefix to avoid double-prefixing
+    // (sendGenerationRequest always prepends prompt_prefix to the prompt)
+    const savedPrefix = extension_settings.sd.prompt_prefix;
+    extension_settings.sd.prompt_prefix = '';
+
     isGenerating = true;
     setStatus('Generating...');
     setSpinner(true);
 
     try {
-        const cmd = '/imagine quiet=true scene';
-        const result = await executeSlashCommandsWithOptions(cmd, {
-            handleParserErrors: false,
-            handleExecutionErrors: false,
-        });
+        // Call the /imagine command callback directly in FREE mode
+        const imagineCmd = SlashCommandParser.commands['imagine'];
+        if (!imagineCmd) {
+            throw new Error('SD extension /imagine command not found');
+        }
 
-        if (result && result.pipe && !result.isError) {
-            updatePanelImage(result.pipe);
+        const imageUrl = await imagineCmd.callback({ quiet: 'true' }, prompt);
+        if (imageUrl) {
+            updatePanelImage(imageUrl);
             setStatus('Ready');
         } else {
-            const errMsg = result?.errorMessage || 'Generation failed';
-            setStatus('Error: ' + errMsg);
-            console.error('[Image Trigger] Generation failed:', errMsg);
+            setStatus('Error: No image generated');
         }
     } catch (err) {
         setStatus('Error: ' + (err.message || 'Unknown error'));
         console.error('[Image Trigger] Generation error:', err);
     } finally {
+        extension_settings.sd.prompt_prefix = savedPrefix;
         isGenerating = false;
         setSpinner(false);
     }
+}
+
+/**
+ * Pin the current panel image to the screen as a static, draggable element.
+ * Pinned images are independent of the panel and can be closed individually.
+ */
+function pinCurrentImage() {
+    const img = document.getElementById('image-trigger-img');
+    if (!img || !img.src || img.src === window.location.href) {
+        return;
+    }
+
+    pinnedCounter++;
+    const id = `image-trigger-pinned-${pinnedCounter}`;
+
+    const container = $(`<div id="${id}" class="image-trigger-pinned">
+        <div id="${id}header" class="fa-solid fa-grip drag-grabber pinned-drag"></div>
+        <img src="${img.src}" />
+        <span class="pinned-close fa-solid fa-circle-xmark"></span>
+    </div>`);
+
+    container.find('.pinned-close').on('click', () => container.remove());
+    $('body').append(container);
+    dragElement(container);
 }
 
 /**
@@ -132,6 +169,11 @@ function bindEvents() {
     // Panel trigger button
     $('#image-trigger-btn').on('click', () => {
         triggerGenerationAsync();
+    });
+
+    // Pin current image button
+    $('#image-trigger-pin-btn').on('click', () => {
+        pinCurrentImage();
     });
 
     // Settings: enabled toggle

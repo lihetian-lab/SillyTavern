@@ -94,3 +94,47 @@
     padding: 3px 8px;
     margin: 0;
 }
+
+/* Pinned images */
+.image-trigger-pinned {
+    position: fixed;
+    z-index: 99;
+    border-radius: 6px;
+    overflow: hidden;
+    filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.image-trigger-pinned .pinned-drag {
+    cursor: grab;
+    padding: 4px 8px;
+    text-align: center;
+    font-size: 10px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.5;
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.image-trigger-pinned .pinned-drag:active {
+    cursor: grabbing;
+}
+
+.image-trigger-pinned img {
+    max-width: 400px;
+    max-height: 400px;
+    display: block;
+}
+
+.image-trigger-pinned .pinned-close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.image-trigger-pinned .pinned-close:hover {
+    opacity: 1;
+}
