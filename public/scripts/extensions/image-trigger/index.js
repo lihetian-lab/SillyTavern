@@ -14,7 +14,6 @@ const MODULE_NAME = 'image_trigger';
 
 const defaultSettings = {
     enabled: true,
-    default_trigger: 'scene',
 };
 
 let isGenerating = false;
@@ -92,14 +91,12 @@ async function triggerGeneration() {
         return;
     }
 
-    const trigger = extension_settings[MODULE_NAME].default_trigger || 'scene';
-
     isGenerating = true;
     setStatus('Generating...');
     setSpinner(true);
 
     try {
-        const cmd = `/imagine quiet=true ${trigger}`;
+        const cmd = '/imagine quiet=true scene';
         const result = await executeSlashCommandsWithOptions(cmd, {
             handleParserErrors: false,
             handleExecutionErrors: false,
@@ -148,16 +145,10 @@ function bindEvents() {
         saveSettings();
     });
 
-    // Settings: default mode selector
-    $('#image_trigger_mode').on('change', function () {
-        extension_settings[MODULE_NAME].default_trigger = String($(this).val());
-        saveSettings();
-    });
 }
 
 function applySettingsToUI() {
     $('#image_trigger_enabled').prop('checked', extension_settings[MODULE_NAME].enabled);
-    $('#image_trigger_mode').val(extension_settings[MODULE_NAME].default_trigger);
 }
 
 function registerCommands() {
