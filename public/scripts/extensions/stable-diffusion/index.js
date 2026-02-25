@@ -270,6 +270,8 @@ const defaultSettings = {
     restore_faces: false,
     enable_hr: false,
     adetailer_face: false,
+    adetailer_prompt: '',
+    adetailer_negative: '',
 
     // Horde settings
     horde: false,
@@ -3746,6 +3748,12 @@ async function generateAutoImage(prompt, negativePrompt, signal) {
                         true, // skip_img2img
                         {
                             'ad_model': 'face_yolov8n.pt',
+                            ...(extension_settings.sd.adetailer_prompt && {
+                                'ad_prompt': extension_settings.sd.adetailer_prompt,
+                            }),
+                            ...(extension_settings.sd.adetailer_negative && {
+                                'ad_negative_prompt': extension_settings.sd.adetailer_negative,
+                            }),
                         },
                     ],
                 },

@@ -7,6 +7,7 @@ import {
 } from '../../extensions.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../slash-commands/SlashCommand.js';
+import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../slash-commands/SlashCommandArgument.js';
 import { dragElement } from '../../RossAscends-mods.js';
 
 const MODULE_NAME = 'image_trigger';
@@ -202,6 +203,88 @@ function registerCommands() {
         },
         helpString: 'Trigger image generation and display the result in the Image Trigger floating panel. Uses SD extension settings. Fire-and-forget: returns immediately while generation runs in the background.',
         returns: 'empty string (generation runs asynchronously)',
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'sd-ratio',
+        callback: (_args, value) => {
+            const input = String(value).trim();
+            const match = input.match(/^(\d+)\s*[x×X]\s*(\d+)$/);
+            if (!match) {
+                return 'Error: use WxH format, e.g. /sd-ratio 768x512';
+            }
+
+            const step = extension_settings.sd?.dimension_step || 64;
+            const min = extension_settings.sd?.dimension_min || 64;
+            const max = extension_settings.sd?.dimension_max || 2048;
+            const w = Math.min(max, Math.max(min, Math.round(Number(match[1]) / step) * step));
+            const h = Math.min(max, Math.max(min, Math.round(Number(match[2]) / step) * step));
+
+            // Trigger SD extension's own handlers which persist via saveSettingsDebounced
+            $('#sd_width').val(w).trigger('input');
+            $('#sd_height').val(h).trigger('input');
+
+            return `${w}x${h}`;
+        },
+        unnamedArgumentList: [
+            SlashCommandArgument.fromProps({
+                description: 'Resolution in WxH format (e.g. 768x512). Values snap to step of 64.',
+                typeList: [ARGUMENT_TYPE.STRING],
+                isRequired: true,
+            }),
+        ],
+        helpString: 'Permanently set SD image generation dimensions. Usage: /sd-ratio 768x512',
+        returns: 'The applied resolution as WxH string',
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'sd-adetailer',
+        callback: (args, value) => {
+            const toggle = String(value).trim().toLowerCase();
+
+            if (toggle === 'on' || toggle === 'off') {
+                extension_settings.sd.adetailer_face = (toggle === 'on');
+                $('#sd_adetailer_face').prop('checked', toggle === 'on');
+            }
+
+            if (args.prompt !== undefined) {
+                extension_settings.sd.adetailer_prompt = String(args.prompt);
+            }
+            if (args.negative !== undefined) {
+                extension_settings.sd.adetailer_negative = String(args.negative);
+            }
+
+            saveSettingsDebounced();
+
+            const status = extension_settings.sd.adetailer_face ? 'ON' : 'OFF';
+            const promptInfo = extension_settings.sd.adetailer_prompt
+                ? ` | prompt: ${extension_settings.sd.adetailer_prompt}`
+                : ' | prompt: (using main prompt)';
+            return `ADetailer: ${status}${promptInfo}`;
+        },
+        namedArgumentList: [
+            SlashCommandNamedArgument.fromProps({
+                name: 'prompt',
+                description: 'Independent positive prompt for ADetailer inpainting. Empty string to clear.',
+                typeList: [ARGUMENT_TYPE.STRING],
+                isRequired: false,
+            }),
+            SlashCommandNamedArgument.fromProps({
+                name: 'negative',
+                description: 'Independent negative prompt for ADetailer inpainting. Empty string to clear.',
+                typeList: [ARGUMENT_TYPE.STRING],
+                isRequired: false,
+            }),
+        ],
+        unnamedArgumentList: [
+            SlashCommandArgument.fromProps({
+                description: '"on" or "off" to toggle ADetailer',
+                typeList: [ARGUMENT_TYPE.STRING],
+                isRequired: false,
+            }),
+        ],
+        helpString: 'Toggle ADetailer and set independent prompts. Usage: /sd-adetailer on prompt="detailed face, blue eyes"',
+        returns: 'Status string with current ADetailer state',
     }));
 }
 
