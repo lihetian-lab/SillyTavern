@@ -1,7 +1,8 @@
 import { eventSource, event_types } from '../../../script.js';
+import { power_user } from '../../power-user.js';
 
-let isStreaming = false;
-let userScrolled = false;
+let savedAutoScroll = true;
+let observer = null;
 
 function getScrollTarget(chat) {
     return chat?.querySelector('.mes:nth-last-child(2)') || chat?.querySelector('.mes:last-child');
@@ -14,35 +15,44 @@ function scrollTargetToTop() {
     target.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
 
-// Patch jQuery .scrollTop() globally, intercept only for #chat during streaming
-const originalScrollTop = $.fn.scrollTop;
-$.fn.scrollTop = function (val) {
-    if (val !== undefined && isStreaming && !userScrolled && this[0]?.id === 'chat') {
-        const target = getScrollTarget(this[0]);
-        if (target) {
-            return originalScrollTop.call(this, target.offsetTop);
-        }
-    }
-    return originalScrollTop.apply(this, arguments);
-};
-
-// Detect user wheel scroll on #chat
-function attachWheelListener() {
-    const chat = document.getElementById('chat');
-    if (!chat || chat.__wheelListenerAttached) return;
-    chat.__wheelListenerAttached = true;
-    chat.addEventListener('wheel', () => {
-        if (isStreaming) userScrolled = true;
-    }, { passive: true });
-}
-
+// When streaming starts: disable auto-scroll, watch for new message to appear
 eventSource.on(event_types.GENERATION_STARTED, () => {
-    isStreaming = true;
-    userScrolled = false;
+    savedAutoScroll = power_user.auto_scroll_chat_to_bottom;
+    power_user.auto_scroll_chat_to_bottom = false;
+
+    // Watch for the streaming message element to be added
+    const chat = document.getElementById('chat');
+    if (!chat) return;
+
+    observer?.disconnect();
+    observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.type !== 'childList' || mutation.addedNodes.length === 0) continue;
+            const hasNewMessage = Array.from(mutation.addedNodes).some(
+                node => node.nodeType === 1 && node.classList?.contains('mes'),
+            );
+            if (hasNewMessage) {
+                // New message appeared, scroll previous message to top
+                requestAnimationFrame(() => scrollTargetToTop());
+                observer?.disconnect();
+                observer = null;
+                return;
+            }
+        }
+    });
+    observer.observe(chat, { childList: true });
 });
 
-eventSource.on(event_types.GENERATION_ENDED, () => { isStreaming = false; });
-eventSource.on(event_types.GENERATION_STOPPED, () => { isStreaming = false; });
+// When streaming ends: restore auto-scroll setting, do final scroll
+function onStreamingEnd() {
+    observer?.disconnect();
+    observer = null;
+    power_user.auto_scroll_chat_to_bottom = savedAutoScroll;
+    scrollTargetToTop();
+}
+
+eventSource.on(event_types.GENERATION_ENDED, onStreamingEnd);
+eventSource.on(event_types.GENERATION_STOPPED, onStreamingEnd);
 
 // Non-streaming: scroll on message render
 eventSource.makeLast(event_types.CHARACTER_MESSAGE_RENDERED, () => {
@@ -52,6 +62,3 @@ eventSource.makeLast(event_types.CHARACTER_MESSAGE_RENDERED, () => {
 eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, () => {
     requestAnimationFrame(() => requestAnimationFrame(() => scrollTargetToTop()));
 });
-
-eventSource.on(event_types.CHAT_CHANGED, () => requestAnimationFrame(() => attachWheelListener()));
-requestAnimationFrame(() => attachWheelListener());
