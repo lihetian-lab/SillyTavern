@@ -1,7 +1,1 @@
-#chat {
-    scroll-snap-type: y proximity;
-}
-
-#chat .mes:last-child {
-    scroll-snap-align: start;
-}
+/* no custom styles needed */
