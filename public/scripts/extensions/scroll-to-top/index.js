@@ -1,18 +1,18 @@
-import { scrollChatToBottom } from '../../../script.js';
+import { eventSource, event_types } from '../../../script.js';
 
-// Override: scroll to the TOP of the last message instead of the bottom of the chat
-const chat = document.getElementById('chat');
-
-const observer = new MutationObserver(() => {
+function scrollLastMessageToTop() {
+    const chat = document.getElementById('chat');
     const lastMsg = chat?.querySelector('.mes:last-child');
     if (!lastMsg) return;
 
-    // Wait a frame so SillyTavern's own scrollChatToBottom runs first, then override
+    // Double RAF to run after SillyTavern's own scrollChatToBottom
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             lastMsg.scrollIntoView({ block: 'start', behavior: 'instant' });
         });
     });
-});
+}
 
-observer.observe(chat, { childList: true });
+// makeLast ensures we run after all other handlers (including scroll)
+eventSource.makeLast(event_types.CHARACTER_MESSAGE_RENDERED, scrollLastMessageToTop);
+eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, scrollLastMessageToTop);
