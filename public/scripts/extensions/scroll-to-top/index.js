@@ -48,7 +48,6 @@ function onStreamingEnd() {
     observer?.disconnect();
     observer = null;
     power_user.auto_scroll_chat_to_bottom = savedAutoScroll;
-    scrollTargetToTop();
 }
 
 eventSource.on(event_types.GENERATION_ENDED, onStreamingEnd);
