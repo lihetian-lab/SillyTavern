@@ -14,8 +14,13 @@ function getScrollTarget(chat) {
 function scrollTargetToTop() {
     const chat = document.getElementById('chat');
     const target = getScrollTarget(chat);
-    if (!target) return;
-    target.scrollIntoView({ block: 'start', behavior: 'instant' });
+    if (!target) {
+        console.log('[scroll-to-top] no target found');
+        return;
+    }
+    const before = chat.scrollTop;
+    chat.scrollTop = target.offsetTop;
+    console.log('[scroll-to-top] scrollTop:', before, '->', chat.scrollTop, 'target.offsetTop:', target.offsetTop, 'chat.scrollHeight:', chat.scrollHeight);
 }
 
 // Detect user wheel scroll on #chat
