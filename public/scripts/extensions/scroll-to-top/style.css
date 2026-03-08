@@ -1,10 +1,7 @@
-@keyframes stream-reveal {
-    from {
-        max-height: 0;
-    }
+#chat {
+    scroll-snap-type: y proximity;
 }
 
-.mes_text.streaming-reveal {
-    overflow: hidden;
-    animation: stream-reveal var(--stream-duration, 5s) linear forwards;
+#chat .mes:last-child {
+    scroll-snap-align: start;
 }
