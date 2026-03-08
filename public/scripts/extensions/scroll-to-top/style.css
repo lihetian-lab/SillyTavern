@@ -1,0 +1,10 @@
+@keyframes stream-reveal {
+    from {
+        max-height: 0;
+    }
+}
+
+.mes_text.streaming-reveal {
+    overflow: hidden;
+    animation: stream-reveal var(--stream-duration, 5s) linear forwards;
+}
