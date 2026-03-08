@@ -2,7 +2,8 @@ import { eventSource, event_types } from '../../../script.js';
 import { power_user } from '../../power-user.js';
 
 let savedAutoScroll = true;
-let observer = null;
+let userScrolled = false;
+let scrollInterval = null;
 
 function getScrollTarget(chat) {
     return chat?.querySelector('.mes:nth-last-child(2)') || chat?.querySelector('.mes:last-child');
@@ -15,38 +16,33 @@ function scrollTargetToTop() {
     target.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
 
-// When streaming starts: disable auto-scroll, watch for new message to appear
+// Detect user wheel scroll on #chat
+const chat = document.getElementById('chat');
+chat?.addEventListener('wheel', () => {
+    if (scrollInterval) userScrolled = true;
+}, { passive: true });
+
 eventSource.on(event_types.GENERATION_STARTED, () => {
+    // Disable SillyTavern's auto-scroll
     savedAutoScroll = power_user.auto_scroll_chat_to_bottom;
     power_user.auto_scroll_chat_to_bottom = false;
+    userScrolled = false;
 
-    // Watch for the streaming message element to be added
-    const chat = document.getElementById('chat');
-    if (!chat) return;
-
-    observer?.disconnect();
-    observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            if (mutation.type !== 'childList' || mutation.addedNodes.length === 0) continue;
-            const hasNewMessage = Array.from(mutation.addedNodes).some(
-                node => node.nodeType === 1 && node.classList?.contains('mes'),
-            );
-            if (hasNewMessage) {
-                // New message appeared, scroll previous message to top
-                requestAnimationFrame(() => scrollTargetToTop());
-                observer?.disconnect();
-                observer = null;
-                return;
-            }
+    // Keep scrolling to top of previous message until user scrolls or streaming ends
+    clearInterval(scrollInterval);
+    scrollInterval = setInterval(() => {
+        if (userScrolled) {
+            clearInterval(scrollInterval);
+            scrollInterval = null;
+            return;
         }
-    });
-    observer.observe(chat, { childList: true });
+        scrollTargetToTop();
+    }, 150);
 });
 
-// When streaming ends: restore auto-scroll setting, do final scroll
 function onStreamingEnd() {
-    observer?.disconnect();
-    observer = null;
+    clearInterval(scrollInterval);
+    scrollInterval = null;
     power_user.auto_scroll_chat_to_bottom = savedAutoScroll;
 }
 
