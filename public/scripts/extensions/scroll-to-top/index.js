@@ -13,6 +13,9 @@ function scrollLastMessageToTop() {
     });
 }
 
-// makeLast ensures we run after all other handlers (including scroll)
+// When streaming starts, scroll the new AI message to top
+eventSource.makeLast(event_types.GENERATION_STARTED, scrollLastMessageToTop);
+// When streaming ends, scroll the completed message to top
 eventSource.makeLast(event_types.CHARACTER_MESSAGE_RENDERED, scrollLastMessageToTop);
+// When user message is rendered, scroll it to top
 eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, scrollLastMessageToTop);
