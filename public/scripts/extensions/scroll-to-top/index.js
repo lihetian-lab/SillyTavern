@@ -3,10 +3,7 @@ import { eventSource, event_types } from '../../../script.js';
 let isStreaming = false;
 let userScrolled = false;
 
-const scrollTopDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
-
 function getScrollTarget(chat) {
-    // Target the second-to-last message (user's message), so the AI reply streams below it
     return chat?.querySelector('.mes:nth-last-child(2)') || chat?.querySelector('.mes:last-child');
 }
 
@@ -17,38 +14,26 @@ function scrollTargetToTop() {
     target.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
 
-function overrideChatScroll() {
-    const chat = document.getElementById('chat');
-    if (!chat || chat.__scrollTopOverridden) return;
-    chat.__scrollTopOverridden = true;
+// Patch jQuery .scrollTop() globally, intercept only for #chat during streaming
+const originalScrollTop = $.fn.scrollTop;
+$.fn.scrollTop = function (val) {
+    if (val !== undefined && isStreaming && !userScrolled && this[0]?.id === 'chat') {
+        const target = getScrollTarget(this[0]);
+        if (target) {
+            return originalScrollTop.call(this, target.offsetTop);
+        }
+    }
+    return originalScrollTop.apply(this, arguments);
+};
 
-    // Detect user wheel scroll → stop intercepting
+// Detect user wheel scroll on #chat
+function attachWheelListener() {
+    const chat = document.getElementById('chat');
+    if (!chat || chat.__wheelListenerAttached) return;
+    chat.__wheelListenerAttached = true;
     chat.addEventListener('wheel', () => {
         if (isStreaming) userScrolled = true;
     }, { passive: true });
-
-    // Override scrollTop setter to intercept scrollChatToBottom at the property level.
-    // jQuery's .scrollTop(val) internally does elem.scrollTop = val, so this catches it.
-    Object.defineProperty(chat, 'scrollTop', {
-        get() {
-            return scrollTopDesc.get.call(this);
-        },
-        set(value) {
-            if (isStreaming && !userScrolled) {
-                const target = getScrollTarget(this);
-                if (target) {
-                    const targetTop = target.offsetTop;
-                    // If trying to scroll to bottom, redirect to top of previous message
-                    if (value > targetTop + 50) {
-                        scrollTopDesc.set.call(this, targetTop);
-                        return;
-                    }
-                }
-            }
-            scrollTopDesc.set.call(this, value);
-        },
-        configurable: true,
-    });
 }
 
 eventSource.on(event_types.GENERATION_STARTED, () => {
@@ -68,6 +53,5 @@ eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, () => {
     requestAnimationFrame(() => requestAnimationFrame(() => scrollTargetToTop()));
 });
 
-// Setup
-eventSource.on(event_types.CHAT_CHANGED, () => requestAnimationFrame(() => overrideChatScroll()));
-requestAnimationFrame(() => overrideChatScroll());
+eventSource.on(event_types.CHAT_CHANGED, () => requestAnimationFrame(() => attachWheelListener()));
+requestAnimationFrame(() => attachWheelListener());
