@@ -7,45 +7,48 @@ let savedAutoScroll = true;
 let userScrolled = false;
 let scrollInterval = null;
 
-function getScrollTarget(chat) {
-    return chat?.querySelector('.mes:nth-last-child(2)') || chat?.querySelector('.mes:last-child');
-}
-
-function scrollTargetToTop() {
-    const chat = document.getElementById('chat');
-    const target = getScrollTarget(chat);
-    if (!target) {
-        console.log('[scroll-to-top] no target found');
-        return;
-    }
-    const before = chat.scrollTop;
-    chat.scrollTop = target.offsetTop;
-    console.log('[scroll-to-top] scrollTop:', before, '->', chat.scrollTop, 'target.offsetTop:', target.offsetTop, 'chat.scrollHeight:', chat.scrollHeight);
-}
-
 // Detect user wheel scroll on #chat
 const chat = document.getElementById('chat');
 chat?.addEventListener('wheel', () => {
     if (scrollInterval) userScrolled = true;
 }, { passive: true });
 
+function doScroll() {
+    const chat = document.getElementById('chat');
+    if (!chat) {
+        console.log('[scroll-to-top] no chat element');
+        return;
+    }
+    const target = chat.querySelector('.mes:nth-last-child(2)') || chat.querySelector('.mes:last-child');
+    if (!target) {
+        console.log('[scroll-to-top] no target element');
+        return;
+    }
+    const chatRect = chat.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const offset = targetRect.top - chatRect.top;
+    const before = chat.scrollTop;
+    chat.scrollTop += offset;
+    console.log('[scroll-to-top] before:', before, 'after:', chat.scrollTop, 'offset:', offset);
+}
+
 eventSource.on(event_types.GENERATION_STARTED, () => {
-    console.log('[scroll-to-top] GENERATION_STARTED fired, auto_scroll was:', power_user.auto_scroll_chat_to_bottom);
-    // Disable SillyTavern's auto-scroll
+    console.log('[scroll-to-top] GENERATION_STARTED, auto_scroll was:', power_user.auto_scroll_chat_to_bottom);
     savedAutoScroll = power_user.auto_scroll_chat_to_bottom;
     power_user.auto_scroll_chat_to_bottom = false;
     userScrolled = false;
 
-    // Keep scrolling to top of previous message until user scrolls or streaming ends
     clearInterval(scrollInterval);
+    // Fire immediately, then every 150ms
+    doScroll();
     scrollInterval = setInterval(() => {
         if (userScrolled) {
             clearInterval(scrollInterval);
             scrollInterval = null;
+            console.log('[scroll-to-top] user scrolled, stopping');
             return;
         }
-        console.log('[scroll-to-top] interval tick, scrolling to target');
-        scrollTargetToTop();
+        doScroll();
     }, 150);
 });
 
@@ -53,6 +56,7 @@ function onStreamingEnd() {
     clearInterval(scrollInterval);
     scrollInterval = null;
     power_user.auto_scroll_chat_to_bottom = savedAutoScroll;
+    console.log('[scroll-to-top] streaming ended, restored auto_scroll:', savedAutoScroll);
 }
 
 eventSource.on(event_types.GENERATION_ENDED, onStreamingEnd);
@@ -60,9 +64,9 @@ eventSource.on(event_types.GENERATION_STOPPED, onStreamingEnd);
 
 // Non-streaming: scroll on message render
 eventSource.makeLast(event_types.CHARACTER_MESSAGE_RENDERED, () => {
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollTargetToTop()));
+    requestAnimationFrame(() => requestAnimationFrame(() => doScroll()));
 });
 
 eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, () => {
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollTargetToTop()));
+    requestAnimationFrame(() => requestAnimationFrame(() => doScroll()));
 });
