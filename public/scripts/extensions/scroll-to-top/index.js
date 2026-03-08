@@ -1,6 +1,8 @@
 import { eventSource, event_types } from '../../../script.js';
 import { power_user } from '../../power-user.js';
 
+console.log('[scroll-to-top] Extension loaded');
+
 let savedAutoScroll = true;
 let userScrolled = false;
 let scrollInterval = null;
@@ -23,6 +25,7 @@ chat?.addEventListener('wheel', () => {
 }, { passive: true });
 
 eventSource.on(event_types.GENERATION_STARTED, () => {
+    console.log('[scroll-to-top] GENERATION_STARTED fired, auto_scroll was:', power_user.auto_scroll_chat_to_bottom);
     // Disable SillyTavern's auto-scroll
     savedAutoScroll = power_user.auto_scroll_chat_to_bottom;
     power_user.auto_scroll_chat_to_bottom = false;
@@ -36,6 +39,7 @@ eventSource.on(event_types.GENERATION_STARTED, () => {
             scrollInterval = null;
             return;
         }
+        console.log('[scroll-to-top] interval tick, scrolling to target');
         scrollTargetToTop();
     }, 150);
 });
