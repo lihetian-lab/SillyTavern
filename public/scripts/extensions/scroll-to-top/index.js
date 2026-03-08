@@ -1,6 +1,9 @@
 import { eventSource, event_types } from '../../../script.js';
 
-let chatObserver = null;
+let isStreaming = false;
+let userScrolled = false;
+let redirecting = false;
+let scrollListenerAttached = false;
 
 function scrollLastMessageToTop() {
     const chat = document.getElementById('chat');
@@ -9,48 +12,57 @@ function scrollLastMessageToTop() {
     lastMsg.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
 
-function setupChatObserver() {
-    if (chatObserver) return;
-    const chat = document.getElementById('chat');
-    if (!chat) return;
-
-    chatObserver = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            if (mutation.type !== 'childList' || mutation.addedNodes.length === 0) continue;
-            const hasNewMessage = Array.from(mutation.addedNodes).some(
-                node => node.nodeType === 1 && node.classList?.contains('mes'),
-            );
-            if (hasNewMessage) {
-                // Delay to run after SillyTavern's scrollLock=false and first scrollChatToBottom
-                // Our scroll puts view NOT at bottom → SillyTavern's scroll handler sets scrollLock=true
-                // → no more auto-scroll for the rest of streaming → user can scroll freely
-                setTimeout(() => scrollLastMessageToTop(), 80);
-            }
-        }
-    });
-
-    chatObserver.observe(chat, { childList: true });
-}
-
-// Set up observer when chat loads, and also handle non-streaming renders
-eventSource.on(event_types.CHAT_CHANGED, () => {
-    chatObserver?.disconnect();
-    chatObserver = null;
-    // Chat element is recreated, need to re-observe
-    requestAnimationFrame(() => setupChatObserver());
+// During streaming: intercept programmatic scroll-to-bottom, redirect to top of last message.
+// Once user scrolls with mouse wheel, stop intercepting (preserves free-scroll behavior).
+eventSource.on(event_types.GENERATION_STARTED, () => {
+    isStreaming = true;
+    userScrolled = false;
 });
 
+eventSource.on(event_types.GENERATION_ENDED, () => { isStreaming = false; });
+eventSource.on(event_types.GENERATION_STOPPED, () => { isStreaming = false; });
+
+function attachScrollListener() {
+    if (scrollListenerAttached) return;
+    const chat = document.getElementById('chat');
+    if (!chat) return;
+    scrollListenerAttached = true;
+
+    // Detect user-initiated scroll via mouse wheel
+    chat.addEventListener('wheel', () => {
+        if (isStreaming) userScrolled = true;
+    }, { passive: true });
+
+    // Intercept programmatic scroll-to-bottom during streaming
+    chat.addEventListener('scroll', () => {
+        if (!isStreaming || userScrolled || redirecting) return;
+
+        const lastMsg = chat.querySelector('.mes:last-child');
+        if (!lastMsg) return;
+
+        const targetTop = lastMsg.offsetTop;
+
+        // Only redirect if scrolled well past the last message top (i.e., a scroll-to-bottom)
+        if (chat.scrollTop > targetTop + 50) {
+            redirecting = true;
+            chat.scrollTop = targetTop;
+            requestAnimationFrame(() => requestAnimationFrame(() => { redirecting = false; }));
+        }
+    }, { passive: true });
+}
+
+// Non-streaming: scroll on message render
 eventSource.makeLast(event_types.CHARACTER_MESSAGE_RENDERED, () => {
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => scrollLastMessageToTop());
-    });
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollLastMessageToTop()));
 });
 
 eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, () => {
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => scrollLastMessageToTop());
-    });
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollLastMessageToTop()));
 });
 
-// Initial setup
-requestAnimationFrame(() => setupChatObserver());
+// Attach listener when chat is ready
+eventSource.on(event_types.CHAT_CHANGED, () => {
+    scrollListenerAttached = false;
+    requestAnimationFrame(() => attachScrollListener());
+});
+requestAnimationFrame(() => attachScrollListener());
