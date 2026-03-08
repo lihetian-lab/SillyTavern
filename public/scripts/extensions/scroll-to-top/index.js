@@ -5,11 +5,16 @@ let userScrolled = false;
 
 const scrollTopDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
 
-function scrollLastMessageToTop() {
+function getScrollTarget(chat) {
+    // Target the second-to-last message (user's message), so the AI reply streams below it
+    return chat?.querySelector('.mes:nth-last-child(2)') || chat?.querySelector('.mes:last-child');
+}
+
+function scrollTargetToTop() {
     const chat = document.getElementById('chat');
-    const lastMsg = chat?.querySelector('.mes:last-child');
-    if (!lastMsg) return;
-    lastMsg.scrollIntoView({ block: 'start', behavior: 'instant' });
+    const target = getScrollTarget(chat);
+    if (!target) return;
+    target.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
 
 function overrideChatScroll() {
@@ -30,10 +35,10 @@ function overrideChatScroll() {
         },
         set(value) {
             if (isStreaming && !userScrolled) {
-                const lastMsg = this.querySelector('.mes:last-child');
-                if (lastMsg) {
-                    const targetTop = lastMsg.offsetTop;
-                    // If trying to scroll to bottom, redirect to top of last message
+                const target = getScrollTarget(this);
+                if (target) {
+                    const targetTop = target.offsetTop;
+                    // If trying to scroll to bottom, redirect to top of previous message
                     if (value > targetTop + 50) {
                         scrollTopDesc.set.call(this, targetTop);
                         return;
@@ -56,11 +61,11 @@ eventSource.on(event_types.GENERATION_STOPPED, () => { isStreaming = false; });
 
 // Non-streaming: scroll on message render
 eventSource.makeLast(event_types.CHARACTER_MESSAGE_RENDERED, () => {
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollLastMessageToTop()));
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollTargetToTop()));
 });
 
 eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, () => {
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollLastMessageToTop()));
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollTargetToTop()));
 });
 
 // Setup
